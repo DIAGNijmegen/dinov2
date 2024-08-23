@@ -1,7 +1,7 @@
 from functools import lru_cache
 
 from mmap import ACCESS_READ, mmap
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple, List
 from torchvision.datasets import VisionDataset
 from pathlib import Path
 import numpy as np
@@ -19,16 +19,18 @@ class _Subset:
     def entries_name(self):
         return f"pretrain_entries_{self.value}.npy"
 
+def _get_tarball_path(tarball_paths: List[Path], cohort_name: str) -> str:
+    for path in tarball_paths:
+        if cohort_name in str(path):
+            return path
+    return None
 
-def _get_tarball_path(cohort_name: str) -> str:
-    return f"{cohort_name}.tar"
 
-
-def _make_mmap_tarball(tarballs_root: str, mmap_cache_size: int):
+def _make_mmap_tarball(tarball_root: str, mmap_cache_size: int):
+    tarball_paths = Path(tarball_root).rglob("*.tar")
     @lru_cache(maxsize=mmap_cache_size)
     def _mmap_tarball(cohort_name: str) -> mmap:
-        tarball_path = _get_tarball_path(cohort_name)
-        tarball_full_path = Path(tarballs_root, tarball_path)
+        tarball_full_path = _get_tarball_path(tarball_paths, cohort_name)
         with open(tarball_full_path) as f:
             return mmap(fileno=f.fileno(), length=0, access=ACCESS_READ)
 
@@ -54,10 +56,10 @@ class PathologyFoundationDataset(VisionDataset):
         self._subset = subset
         self._get_entries()
         self._get_cohort_names()
-        self._mmap_tarball = _make_mmap_tarball(self._tarballs_root, mmap_cache_size)
+        self._mmap_tarball = _make_mmap_tarball(self._tarball_root, mmap_cache_size)
 
     @property
-    def _tarballs_root(self) -> str:
+    def _tarball_root(self) -> str:
         return self.root
 
     @property
