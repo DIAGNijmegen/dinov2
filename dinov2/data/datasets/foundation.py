@@ -27,7 +27,7 @@ def _get_tarball_path(tarball_paths: List[Path], cohort_name: str) -> str:
 
 
 def _make_mmap_tarball(tarball_root: str, mmap_cache_size: int):
-    tarball_paths = Path(tarball_root).rglob("*.tar")
+    tarball_paths = [x for x in Path(tarball_root).rglob("*.tar")]
     @lru_cache(maxsize=mmap_cache_size)
     def _mmap_tarball(cohort_name: str) -> mmap:
         tarball_full_path = _get_tarball_path(tarball_paths, cohort_name)
