@@ -3,21 +3,24 @@ ARG CUDA_MAJOR_VERSION=11.8.0
 ARG CUDNN_MAJOR_VERSION=8
 FROM nvidia/cuda:${CUDA_MAJOR_VERSION}-cudnn${CUDNN_MAJOR_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS base
 
-# install dependencies
+# install dependencies in a single RUN command
 ENV DEBIAN_FRONTEND=noninteractive TZ=Europe/Amsterdam
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-curl wget xz-utils ca-certificates \
-        gcc g++ make build-essential \
-        python3-pip python3-dev \
-        git vim htop \
-        libssl-dev zlib1g-dev libncurses5-dev libncursesw5-dev \
-        libreadline-dev libsqlite3-dev libgdbm-dev libbz2-dev \
-        libexpat1-dev liblzma-dev tk-dev libffi-dev uuid-dev \
-    && rm -rf /var/lib/apt/lists/*
-RUN apt-get update && apt-get install --only-upgrade libpmix2
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl wget xz-utils ca-certificates \
+    gcc g++ make build-essential \
+    python3-pip python3-dev \
+    git vim htop openssh-server \
+    libssl-dev zlib1g-dev libncurses5-dev libncursesw5-dev \
+    libreadline-dev libsqlite3-dev libgdbm-dev libbz2-dev \
+    libexpat1-dev liblzma-dev tk-dev libffi-dev uuid-dev && \
+    apt-get clean && \
+    mkdir /var/run/sshd && \
+    rm -rf /var/lib/apt/lists/*
 
-# install Python
+# install Python in a separate build stage to keep the image smaller
+FROM base AS builder
 ARG PYTHON_VERSION=3.11.3
 ARG BUILD_JOBS=16
 RUN cd /tmp && \
@@ -30,31 +33,47 @@ RUN cd /tmp && \
     rm -rf /tmp/Python-3* && \
     ldconfig
 
-# install miniconda
-RUN mkdir -p /root/miniconda3
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /root/miniconda3/miniconda.sh
-RUN bash /root/miniconda3/miniconda.sh -b -u -p /root/miniconda3
-RUN rm -rf /root/miniconda3/miniconda.sh
+FROM base AS final
+COPY --from=builder /usr/local /usr/local
+
+# # install miniconda
+RUN mkdir -p /root/miniconda3 && \
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /root/miniconda3/miniconda.sh && \
+    bash /root/miniconda3/miniconda.sh -b -u -p /root/miniconda3 && \
+    rm -rf /root/miniconda3/miniconda.sh
+
+# set environment variable to include conda in PATH
 ENV PATH="/root/miniconda3/bin:$PATH"
 
-WORKDIR /home/user/
-
-# clone dinov2 repo
-RUN git clone https://github.com/DIAGNijmegen/dinov2.git
-WORKDIR /home/user/dinov2
-RUN git switch aws
-
-# configure conda environment
-RUN conda env create -f conda.yaml -n dinov2
-RUN ln -sf /root/miniconda3/bin/python /usr/bin/python3 && \
+# install additional conda packages and clean up
+RUN conda install -c conda-forge -n base conda-libmamba-solver && \
+    conda config --set solver libmamba && \
+    conda clean --all -y && \
+    ln -sf /root/miniconda3/bin/python /usr/bin/python3 && \
     ln -sf /root/miniconda3/bin/python /usr/bin/python
 
-# activate conda environment
-RUN echo "source /root/miniconda3/etc/profile.d/conda.sh && conda activate dinov2" >> ~/.bashrc
+# clone the dinov2 repository
+WORKDIR /home/user/
+RUN git clone https://github.com/DIAGNijmegen/dinov2.git
+WORKDIR /home/user/dinov2
+RUN git switch aws && \
+    conda env create -f conda.yaml -n dinov2 && \
+    conda clean --all -y
 
-# add dinov2 folder to python path
+# configure the environment
+ENV PATH="/root/miniconda3/bin:$PATH"
 ENV PYTHONPATH="/home/user/dinov2:$PYTHONPATH"
 ENV CUDA_LAUNCH_BLOCKING=1
 ENV TORCH_USE_CUDA_DSA=1
+RUN echo "source /root/miniconda3/etc/profile.d/conda.sh && conda activate dinov2" >> ~/.bashrc
 
-ENTRYPOINT ["/bin/bash", "-c", "source /root/miniconda3/etc/profile.d/conda.sh && conda activate dinov2 && exec \"$@\"", "--"]
+# expose port for ssh and jupyter
+EXPOSE 22 8888
+
+# cleanup
+RUN apt-get remove --purge -y build-essential && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+ENTRYPOINT ["/bin/bash", "-c", "exec \"$@\"", "--"]

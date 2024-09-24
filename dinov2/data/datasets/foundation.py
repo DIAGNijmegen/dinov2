@@ -84,8 +84,15 @@ class PathologyFoundationDataset(VisionDataset):
         cohort_dict_path = Path(self.extra, "cohort_indices.npy")
         return np.load(cohort_dict_path, allow_pickle=True).item()
 
-    def _map_cohort_to_tarball(self) -> dict:
-        self._cohort_to_tarball = {name: path for path in self._tarball_paths for name in self._cohort_names.values() if name == path.stem}
+    def _map_cohort_to_tarball(self) -> None:
+        stem_to_path = {path.stem: path for path in self._tarball_paths}
+        # map each cohort name to its corresponding tarball path
+        self._cohort_to_tarball = {}
+        for name in self._cohort_names.values():
+            if name in stem_to_path:
+                self._cohort_to_tarball[name] = stem_to_path[name]
+            else:
+                raise KeyError(f"cohort name {name} not found in tarball paths")
 
     def get_image_data(self, index: int) -> bytes:
         entry = self._entries[index]
