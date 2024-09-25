@@ -260,9 +260,10 @@ def do_train(cfg, model, resume=False):
     inputs_dtype = torch.half
     fp16_scaler = model.fp16_scaler  # for mixed precision training
 
-    results_save_dir = Path(cfg.train.output_dir, "results")
-    if distributed.is_main_process():
-        results_save_dir.mkdir(exist_ok=True)
+    if cfg.tune.tune_every:
+        results_save_dir = Path(cfg.train.output_dir, "results")
+        if distributed.is_main_process():
+            results_save_dir.mkdir(exist_ok=True)
 
     # setup optimizer
     optimizer = build_optimizer(cfg, model.get_params_groups())
