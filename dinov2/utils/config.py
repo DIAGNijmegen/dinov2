@@ -65,8 +65,17 @@ def default_setup(args, cfg):
         run_id = obj[0]
 
     output_dir = Path(cfg.train.output_dir, run_id)
-    output_dir.mkdir(exist_ok=True, parents=True)
+    if distributed.is_main_process():
+        output_dir.mkdir(exist_ok=True, parents=True)
     cfg.train.output_dir = str(output_dir)
+
+    if cfg.train.checkpoint_dir is None:
+        checkpoint_dir = Path(output_dir, "checkpoints")
+    else:
+        checkpoint_dir = Path(cfg.train.checkpoint_dir)
+    if distributed.is_main_process():
+        checkpoint_dir.mkdir(exist_ok=True, parents=True)
+    cfg.train.checkpoint_dir = str(checkpoint_dir)
 
     seed = getattr(args, "seed", 0)
     rank = distributed.get_global_rank()

@@ -136,11 +136,11 @@ def update_log_dict(
     log_dict.update({f"{name}": value})
 
 
-def save_checkpoint(cfg, model, iteration):
+def save_checkpoint(save_dir, model, iteration):
     new_state_dict = model.teacher.state_dict()
 
     if distributed.is_main_process():
-        checkpoint_dir = Path(cfg.train.output_dir, "checkpoints", "teacher")
+        checkpoint_dir = Path(save_dir, "teacher")
         checkpoint_dir.mkdir(exist_ok=True, parents=True)
         # save teacher checkpoint
         teacher_ckp_path = Path(checkpoint_dir, f"teacher_{iteration}.pth")
@@ -269,10 +269,7 @@ def do_train(cfg, model, resume=False):
     optimizer = build_optimizer(cfg, model.get_params_groups())
 
     # checkpointer
-    checkpoint_save_dir = Path(cfg.train.output_dir, "checkpoints")
-    if distributed.is_main_process():
-        checkpoint_save_dir.mkdir(exist_ok=True)
-    checkpointer = FSDPCheckpointer(model, str(checkpoint_save_dir), optimizer=optimizer, save_to_disk=True)
+    checkpointer = FSDPCheckpointer(model, cfg.train.checkpoint_dir, optimizer=optimizer, save_to_disk=True)
 
     start_iter = checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
 
@@ -372,7 +369,7 @@ def do_train(cfg, model, resume=False):
         cfg.tune.early_stopping.min_max,
         cfg.tune.early_stopping.patience,
         cfg.tune.early_stopping.min_epoch,
-        checkpoint_dir=checkpoint_save_dir,
+        checkpoint_dir=Path(cfg.train.checkpoint_dir),
         verbose=True,
     )
 
@@ -515,7 +512,7 @@ def do_train(cfg, model, resume=False):
         # checkpointing and testing
 
         if cfg.train.save_frequency > 0 and (iteration + 1) % save_every == 0:
-            save_checkpoint(cfg, model, iteration + 1)
+            save_checkpoint(cfg.train.checkpoint_dir, model, iteration + 1)
             torch.cuda.synchronize()
 
         periodic_checkpointer.step(iteration, run_distributed=run_distributed)
@@ -540,12 +537,13 @@ def main(args):
     logger.info("Model:\n{}".format(model))
     if args.eval_only:
         iteration = (
-            FSDPCheckpointer(model, save_dir=cfg.train.output_dir)
+            FSDPCheckpointer(model, save_dir=cfg.train.checkpoint_dir)
             .resume_or_load(cfg.MODEL.WEIGHTS, resume=not args.no_resume)
             .get("iteration", -1)
             + 1
         )
-        return save_checkpoint(cfg, model, iteration)
+        teacher_checkpoint_dir = Path(cfg.train.checkpoint_dir, "teacher")
+        return save_checkpoint(teacher_checkpoint_dir, model, iteration)
 
     do_train(cfg, model, resume=not args.no_resume)
 
