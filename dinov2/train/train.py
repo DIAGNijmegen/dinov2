@@ -62,6 +62,12 @@ For python-based LazyConfig, use "path.key=value".
         type=str,
         help="Output directory to save logs and checkpoints",
     )
+    parser.add_argument(
+        "--wandb-key",
+        default=None,
+        type=str,
+        help="API key for logging to W&B",
+    )
 
     return parser
 

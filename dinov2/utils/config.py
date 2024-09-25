@@ -52,7 +52,7 @@ def default_setup(args, cfg):
         run_id = datetime.datetime.now().strftime("%Y-%m-%d_%H_%M")
         # set up wandb
         if cfg.wandb.enable:
-            key = os.environ.get("WANDB_API_KEY")
+            key = args.wandb_key
             wandb_run = utils.initialize_wandb(cfg, key=key)
             wandb_run.define_metric("epoch", summary="max")
             run_id = wandb_run.id
