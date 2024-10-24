@@ -62,6 +62,7 @@ train:
   batch_size_per_gpu: 64
   dataset_path: ImageNet:split=TRAIN
   output_dir: "output"
+  checkpoint_dir:
   seed: 0
   num_workers: 8
   cache_dataset: true

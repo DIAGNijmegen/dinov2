@@ -1,7 +1,7 @@
 from functools import lru_cache
 
 from mmap import ACCESS_READ, mmap
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple, List, Dict
 from torchvision.datasets import VisionDataset
 from pathlib import Path
 import numpy as np
@@ -19,17 +19,14 @@ class _Subset:
     def entries_name(self):
         return f"pretrain_entries_{self.value}.npy"
 
+def _get_tarball_path(cohort_to_tarball: Dict[str,Path], cohort_name: str) -> Path:
+    return cohort_to_tarball[cohort_name]
 
-def _get_tarball_path(cohort_name: str) -> str:
-    return f"{cohort_name}.tar"
-
-
-def _make_mmap_tarball(tarballs_root: str, mmap_cache_size: int):
+def _make_mmap_tarball(cohort_to_tarball: Dict[str,Path], mmap_cache_size: int):
     @lru_cache(maxsize=mmap_cache_size)
     def _mmap_tarball(cohort_name: str) -> mmap:
-        tarball_path = _get_tarball_path(cohort_name)
-        tarball_full_path = Path(tarballs_root, tarball_path)
-        with open(tarball_full_path) as f:
+        tarball_path = _get_tarball_path(cohort_to_tarball, cohort_name)
+        with open(tarball_path) as f:
             return mmap(fileno=f.fileno(), length=0, access=ACCESS_READ)
 
     return _mmap_tarball
@@ -52,12 +49,14 @@ class PathologyFoundationDataset(VisionDataset):
         super().__init__(root, transforms, transform, target_transform)
         self.extra = extra
         self._subset = subset
+        self._get_tarball_paths()
         self._get_entries()
         self._get_cohort_names()
-        self._mmap_tarball = _make_mmap_tarball(self._tarballs_root, mmap_cache_size)
+        self._map_cohort_to_tarball()
+        self._mmap_tarball = _make_mmap_tarball(self._cohort_to_tarball, mmap_cache_size)
 
     @property
-    def _tarballs_root(self) -> str:
+    def _tarball_root(self) -> str:
         return self.root
 
     @property
@@ -67,6 +66,9 @@ class PathologyFoundationDataset(VisionDataset):
     @property
     def _entries_name(self) -> str:
         return self._subset.entries_name() if self._subset else "pretrain_entries.npy"
+
+    def _get_tarball_paths(self) -> List[str]:
+        self._tarball_paths = [x for x in Path(self._tarball_root).rglob("*.tar")]
 
     def _get_entries(self) -> np.ndarray:
         self._entries = self._load_entries(self._entries_name)
@@ -81,6 +83,16 @@ class PathologyFoundationDataset(VisionDataset):
     def _load_cohort_names(self) -> dict:
         cohort_dict_path = Path(self.extra, "cohort_indices.npy")
         return np.load(cohort_dict_path, allow_pickle=True).item()
+
+    def _map_cohort_to_tarball(self) -> None:
+        stem_to_path = {path.stem: path for path in self._tarball_paths}
+        # map each cohort name to its corresponding tarball path
+        self._cohort_to_tarball = {}
+        for name in self._cohort_names.values():
+            if name in stem_to_path:
+                self._cohort_to_tarball[name] = stem_to_path[name]
+            else:
+                raise KeyError(f"cohort name {name} not found in tarball paths")
 
     def get_image_data(self, index: int) -> bytes:
         entry = self._entries[index]
