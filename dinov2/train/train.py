@@ -266,7 +266,7 @@ def do_train(cfg, model, resume=False):
     inputs_dtype = torch.half
     fp16_scaler = model.fp16_scaler  # for mixed precision training
 
-    if cfg.tune.tune_every:
+    if cfg.tune.tune_every_pct:
         results_save_dir = Path(cfg.train.output_dir, "results")
         if distributed.is_main_process():
             results_save_dir.mkdir(exist_ok=True)
